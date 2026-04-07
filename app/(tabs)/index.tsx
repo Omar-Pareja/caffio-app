@@ -14,9 +14,12 @@ import { useUserStore } from "@/lib/store/useUserStore";
 import { useDoseStore } from "@/lib/store/useDoseStore";
 import { useBleStore } from "@/lib/store/useBleStore";
 import { useSessionStore } from "@/lib/store/useSessionStore";
+import { useDoseRequest } from "@/lib/api/useDoseRequest";
+import { useCurve } from "@/lib/api/useCurve";
 import { derivePKParameters, DEFAULT_PK } from "@/lib/pk/parameters";
 import { generateCurve, predictAtTime } from "@/lib/pk/curve";
 import type { DoseEvent } from "@/lib/pk/bateman";
+import type { CurvePoint as LocalCurvePoint } from "@/lib/pk/curve";
 
 /** Convert store doses to PK DoseEvent format */
 function toDoseEvents(doses: { timestamp: string; amountMg: number }[]): DoseEvent[] {
@@ -50,12 +53,35 @@ function currentFractionalHour(): number {
   return now.getHours() + now.getMinutes() / 60;
 }
 
+/**
+ * Convert server curve points (ISO timestamps) to local chart format.
+ * Server returns {time, point_estimate, lower_bound, upper_bound}.
+ */
+function serverCurveToLocal(
+  points: { time: string; point_estimate: number; lower_bound: number; upper_bound: number }[],
+): LocalCurvePoint[] {
+  return points.map((p) => {
+    const date = new Date(p.time);
+    const hour = date.getHours() + date.getMinutes() / 60;
+    return {
+      hour: Math.round(hour * 100) / 100,
+      level: p.point_estimate,
+      upper: p.upper_bound,
+      lower: p.lower_bound,
+    };
+  });
+}
+
 export default function HomeScreen() {
   // Stores
   const user = useUserStore();
   const doseStore = useDoseStore();
   const bleStore = useBleStore();
   const { doseLogExpanded, toggleDoseLog } = useSessionStore();
+
+  // API hooks
+  const doseRequest = useDoseRequest();
+  const curveQuery = useCurve(user.userId);
 
   // Derive PK params from user profile (or use defaults)
   const pk = useMemo(() => {
@@ -78,11 +104,19 @@ export default function HomeScreen() {
     [doseStore.doses],
   );
 
-  // Generate curve from local PK model
-  const curveData = useMemo(
+  // Generate local curve as fallback / instant UI
+  const localCurveData = useMemo(
     () => generateCurve(doseEvents, pk),
     [doseEvents, pk],
   );
+
+  // Use server curve when available, fall back to local PK model
+  const curveData = useMemo(() => {
+    if (curveQuery.data?.points && curveQuery.data.points.length > 0) {
+      return serverCurveToLocal(curveQuery.data.points);
+    }
+    return localCurveData;
+  }, [curveQuery.data, localCurveData]);
 
   // Dose markers on the curve
   const doseMarkers = useMemo(
@@ -100,7 +134,7 @@ export default function HomeScreen() {
     [doseEvents, curveData],
   );
 
-  // Current level + trend
+  // Current level + trend (use local PK for real-time interpolation)
   const currentLevel = predictAtTime(nowHr, doseEvents, pk);
   const prevLevel = predictAtTime(nowHr - 0.25, doseEvents, pk);
   const trend = deriveTrend(currentLevel, prevLevel);
@@ -108,34 +142,82 @@ export default function HomeScreen() {
 
   // Dosing availability
   const remaining = Math.max(doseStore.dailyLimitMg - doseStore.dailyTotalMg, 0);
-  const doseAvailable = remaining > 0 && status !== "complete";
+  const doseAvailable = remaining > 0 && status !== "complete" && !doseRequest.isPending;
 
   // Cutoff time display
-  const cutoffDisplay = doseStore.cutoffTime ?? "—";
+  const cutoffDisplay = doseStore.cutoffTime ?? "---";
 
-  // Handle dose press
+  // Handle dose press — calls server, falls back to local
   const handleDose = useCallback(() => {
     if (!doseAvailable) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return;
     }
 
-    // In simulation mode (no BLE), create a manual dose
-    const doseId = `dose-${Date.now()}`;
-    const amountMg = 25; // Placeholder until API integration
+    if (user.userId) {
+      // Call the real API
+      doseRequest.mutate(
+        {
+          user_id: user.userId,
+          target_mg_l: user.targetLevelMgL,
+        },
+        {
+          onSuccess: (data) => {
+            if (!data.denied && data.amount_mg > 0) {
+              // Server approved — record locally
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+              doseStore.addDose({
+                doseId: `dose-${Date.now()}`,
+                amountMg: data.amount_mg,
+                timestamp: new Date().toISOString(),
+                source: bleStore.connectionState === "connected" ? "device" : "manual",
+                confirmed: true,
+              });
+            } else {
+              // Server denied
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }
+          },
+          onError: () => {
+            // Server unreachable — fall back to local simulation
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+            const amountMg = 25;
+            doseStore.addDose({
+              doseId: `dose-${Date.now()}`,
+              amountMg,
+              timestamp: new Date().toISOString(),
+              source: "manual",
+              confirmed: false,
+            });
+            doseStore.queueForSync({
+              doseId: `dose-${Date.now()}`,
+              amountMg,
+              timestamp: new Date().toISOString(),
+              source: "manual",
+              confirmed: false,
+            });
+          },
+        },
+      );
+    } else {
+      // No user ID (pre-onboarding) — local simulation
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      doseStore.addDose({
+        doseId: `dose-${Date.now()}`,
+        amountMg: 25,
+        timestamp: new Date().toISOString(),
+        source: "manual",
+        confirmed: true,
+      });
+    }
+  }, [doseAvailable, user.userId, user.targetLevelMgL, doseRequest, doseStore, bleStore.connectionState]);
 
-    doseStore.addDose({
-      doseId,
-      amountMg,
-      timestamp: new Date().toISOString(),
-      source: "manual",
-      confirmed: true,
-    });
-  }, [doseAvailable, doseStore]);
-
+  // Last dose display and denial reason
   const lastDose = doseStore.doses.length > 0
     ? doseStore.doses[doseStore.doses.length - 1].amountMg
     : undefined;
+
+  const denialReason = doseRequest.data?.denied ? doseRequest.data.reason : undefined;
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
@@ -158,7 +240,15 @@ export default function HomeScreen() {
         {/* Cutoff banner */}
         {status === "complete" && (
           <CutoffBanner
-            message="Dosing complete for today — enjoy your evening"
+            message="Dosing complete for today --- enjoy your evening"
+            visible
+          />
+        )}
+
+        {/* Denial banner */}
+        {denialReason && (
+          <CutoffBanner
+            message={denialReason}
             visible
           />
         )}
@@ -193,6 +283,7 @@ export default function HomeScreen() {
           available={doseAvailable}
           lastDoseAmount={lastDose}
           onPress={handleDose}
+          loading={doseRequest.isPending}
         />
 
         {/* Daily stats */}

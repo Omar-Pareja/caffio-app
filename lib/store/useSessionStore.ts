@@ -30,6 +30,7 @@ interface SessionState {
 interface SessionActions {
   setOnboardingStep: (step: OnboardingStep) => void;
   completeOnboarding: () => void;
+  resetSession: () => void;
   setDosingMode: (mode: DosingMode) => void;
   acceptDisclaimer: () => void;
   toggleDoseLog: () => void;
@@ -52,6 +53,8 @@ export const useSessionStore = create<SessionState & SessionActions>()(
 
       completeOnboarding: () =>
         set({ onboardingStep: "complete", onboardingComplete: true }),
+
+      resetSession: () => set(initialState),
 
       setDosingMode: (mode) => set({ dosingMode: mode }),
 

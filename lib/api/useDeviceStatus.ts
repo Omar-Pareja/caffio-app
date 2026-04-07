@@ -7,12 +7,10 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type { DeviceStatusResponse } from "./types";
 
-export function useDeviceStatus(deviceId: string | null) {
+export function useDeviceStatus() {
   return useQuery({
-    queryKey: ["device-status", deviceId],
-    queryFn: () =>
-      apiFetch<DeviceStatusResponse>(`/device/status?device_id=${deviceId}`),
-    enabled: !!deviceId,
+    queryKey: ["device-status"],
+    queryFn: () => apiFetch<DeviceStatusResponse>("/device/status"),
     refetchInterval: 30_000,
   });
 }

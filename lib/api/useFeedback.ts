@@ -9,12 +9,13 @@ import type {
   AlertnessFeedback,
   SideEffectFeedback,
   SleepFeedback,
+  FeedbackResponse,
 } from "./types";
 
 export function useAlertnessFeedback() {
   return useMutation({
     mutationFn: (payload: AlertnessFeedback) =>
-      apiFetch<{ received: boolean }>("/feedback/alertness", {
+      apiFetch<FeedbackResponse>("/feedback/alertness", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
@@ -24,7 +25,7 @@ export function useAlertnessFeedback() {
 export function useSideEffectFeedback() {
   return useMutation({
     mutationFn: (payload: SideEffectFeedback) =>
-      apiFetch<{ received: boolean }>("/feedback/side-effect", {
+      apiFetch<FeedbackResponse>("/feedback/side-effect", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
@@ -34,7 +35,7 @@ export function useSideEffectFeedback() {
 export function useSleepFeedback() {
   return useMutation({
     mutationFn: (payload: SleepFeedback) =>
-      apiFetch<{ received: boolean }>("/feedback/sleep", {
+      apiFetch<FeedbackResponse>("/feedback/sleep", {
         method: "POST",
         body: JSON.stringify(payload),
       }),

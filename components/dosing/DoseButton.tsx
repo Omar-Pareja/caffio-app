@@ -13,11 +13,12 @@ interface DoseButtonProps {
   available: boolean;
   lastDoseAmount?: number;
   onPress: () => void;
+  loading?: boolean;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function DoseButton({ available, lastDoseAmount, onPress }: DoseButtonProps) {
+export function DoseButton({ available, lastDoseAmount, onPress, loading }: DoseButtonProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const scale = useSharedValue(1);
   const ringScale = useSharedValue(1);
@@ -33,12 +34,10 @@ export function DoseButton({ available, lastDoseAmount, onPress }: DoseButtonPro
   }));
 
   const handlePress = () => {
-    if (!available) {
+    if (!available || loading) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return;
     }
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
     // Button press animation
     scale.value = withSequence(
@@ -77,9 +76,9 @@ export function DoseButton({ available, lastDoseAmount, onPress }: DoseButtonPro
           style={animatedButtonStyle}
         >
           <Text
-            className={`font-dm-sans-semibold text-lg ${available ? "text-white" : "text-text-muted"}`}
+            className={`font-dm-sans-semibold text-lg ${available && !loading ? "text-white" : "text-text-muted"}`}
           >
-            {available ? "DOSE ME" : "COMPLETE"}
+            {loading ? "..." : available ? "DOSE ME" : "COMPLETE"}
           </Text>
         </AnimatedPressable>
       </View>

@@ -1,6 +1,6 @@
 /** API base URL — override with EXPO_PUBLIC_API_URL env variable */
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
+  process.env.EXPO_PUBLIC_API_URL ?? "http://192.168.1.165:8000";
 
 /** Caffio BLE Service UUID */
 export const CAFFIO_SERVICE_UUID = "00000001-cafe-f10-0000-000000000000";

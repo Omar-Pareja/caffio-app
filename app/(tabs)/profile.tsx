@@ -1,4 +1,5 @@
-import { View, Text, Pressable, ScrollView } from "react-native";
+import { useCallback } from "react";
+import { View, Text, Pressable, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Card } from "@/components/ui/Card";
@@ -7,7 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { useUserStore } from "@/lib/store/useUserStore";
 import { useBleStore } from "@/lib/store/useBleStore";
 import { useSessionStore } from "@/lib/store/useSessionStore";
+import { useUpdateProfile } from "@/lib/api/useUserProfile";
 import { derivePKParameters, DEFAULT_PK } from "@/lib/pk/parameters";
+import type { Sex, Genotype, UserProfilePayload } from "@/lib/api/types";
 
 const GENOTYPE_LABELS: Record<string, string> = {
   AA: "Fast metabolizer",
@@ -16,10 +19,43 @@ const GENOTYPE_LABELS: Record<string, string> = {
   unknown: "Unknown",
 };
 
+interface ProfileFields {
+  userId: string | null;
+  weightKg: number | null;
+  heightCm: number | null;
+  age: number | null;
+  sex: Sex | null;
+  genotype: Genotype;
+  smoking: boolean;
+  medications: string[];
+  dailyCaffeineEstimateMg: number;
+  wakeTime: string;
+  bedTime: string;
+}
+
+/** Build server payload from local user store */
+function buildProfilePayload(user: ProfileFields): UserProfilePayload | null {
+  if (!user.userId || !user.weightKg || !user.age || !user.sex) return null;
+  return {
+    user_id: user.userId,
+    weight_kg: user.weightKg,
+    height_cm: user.heightCm ?? undefined,
+    age: user.age,
+    sex: user.sex,
+    smoking_status: user.smoking,
+    genotype: user.genotype,
+    medications: user.medications,
+    habitual_caffeine_mg_per_day: user.dailyCaffeineEstimateMg,
+    wake_time: user.wakeTime,
+    bed_time: user.bedTime,
+  };
+}
+
 export default function ProfileScreen() {
   const user = useUserStore();
   const ble = useBleStore();
   const session = useSessionStore();
+  const updateProfile = useUpdateProfile();
 
   const pk = user.weightKg
     ? derivePKParameters({
@@ -28,6 +64,40 @@ export default function ProfileScreen() {
         smoking: user.smoking,
       })
     : DEFAULT_PK;
+
+  /** Reset all state and go back to onboarding (testing only) */
+  const handleResetOnboarding = useCallback(() => {
+    Alert.alert(
+      "Reset Onboarding",
+      "This will clear all your data and restart onboarding. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: () => {
+            user.clearProfile();
+            session.resetSession();
+            router.replace("/onboarding/welcome");
+          },
+        },
+      ],
+    );
+  }, [user, session]);
+
+  /** Update a dosing target locally and sync to server */
+  const handleTargetChange = useCallback(
+    (key: "targetLevelMgL" | "bedtimeThresholdMgL", value: number) => {
+      user.setProfile({ [key]: value });
+
+      // Sync to server in the background
+      const payload = buildProfilePayload(user);
+      if (payload) {
+        updateProfile.mutate(payload);
+      }
+    },
+    [user, updateProfile],
+  );
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
@@ -40,19 +110,26 @@ export default function ProfileScreen() {
           Profile & Settings
         </Text>
 
+        {/* Sync status indicator */}
+        {updateProfile.isPending && (
+          <View className="mb-2 px-1">
+            <Text className="text-text-muted font-inter text-xs">Syncing...</Text>
+          </View>
+        )}
+
         {/* Profile summary */}
         <Card className="mb-3 gap-3">
           <Text className="text-text-secondary font-dm-sans text-sm">
             Your Profile
           </Text>
           <View className="gap-2">
-            <ProfileRow label="Weight" value={user.weightKg ? `${user.weightKg} kg` : "—"} />
-            <ProfileRow label="Height" value={user.heightCm ? `${user.heightCm} cm` : "—"} />
-            <ProfileRow label="Age" value={user.age ? `${user.age}` : "—"} />
-            <ProfileRow label="Sex" value={user.sex ?? "—"} />
+            <ProfileRow label="Weight" value={user.weightKg ? `${user.weightKg} kg` : "---"} />
+            <ProfileRow label="Height" value={user.heightCm ? `${user.heightCm} cm` : "---"} />
+            <ProfileRow label="Age" value={user.age ? `${user.age}` : "---"} />
+            <ProfileRow label="Sex" value={user.sex ?? "---"} />
             <ProfileRow
               label="Genotype"
-              value={`${user.genotype} — ${GENOTYPE_LABELS[user.genotype]}`}
+              value={`${user.genotype} --- ${GENOTYPE_LABELS[user.genotype]}`}
             />
             <ProfileRow label="Smoker" value={user.smoking ? "Yes" : "No"} />
             <ProfileRow label="Half-life" value={`${pk.halfLife.toFixed(1)} hours`} />
@@ -77,7 +154,7 @@ export default function ProfileScreen() {
             min={1.5}
             max={6.0}
             unit="mg/L"
-            onChange={(v) => user.setProfile({ targetLevelMgL: v })}
+            onChange={(v) => handleTargetChange("targetLevelMgL", v)}
           />
 
           <SliderRow
@@ -86,7 +163,7 @@ export default function ProfileScreen() {
             min={0.3}
             max={2.0}
             unit="mg/L"
-            onChange={(v) => user.setProfile({ bedtimeThresholdMgL: v })}
+            onChange={(v) => handleTargetChange("bedtimeThresholdMgL", v)}
           />
 
           <View className="flex-row justify-between">
@@ -183,6 +260,17 @@ export default function ProfileScreen() {
             Version 1.0.0
           </Text>
         </Card>
+
+        {/* Debug: Reset onboarding */}
+        <View className="mt-6 mb-2">
+          <Button
+            label="Reset Onboarding"
+            variant="ghost"
+            size="sm"
+            fullWidth
+            onPress={handleResetOnboarding}
+          />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

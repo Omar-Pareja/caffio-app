@@ -1,6 +1,6 @@
 /**
  * API request/response types matching the caffio-engine FastAPI backend.
- * These are the contracts between app and server.
+ * These mirror the Pydantic models in caffio_engine/integration/api.py.
  */
 
 // ── User Profile ──────────────────────────────────────────────
@@ -8,109 +8,120 @@
 export type Sex = "male" | "female";
 export type Genotype = "AA" | "AC" | "CC" | "unknown";
 
-export interface UserProfile {
+/** PUT /user/profile — request body (matches UserProfileRequest) */
+export interface UserProfilePayload {
   user_id: string;
   weight_kg: number;
-  height_cm: number;
+  height_cm?: number;
   age: number;
   sex: Sex;
-  genotype: Genotype;
-  smoking: boolean;
-  wake_time: string;
-  bed_time: string;
-  target_level_mg_l: number;
-  bedtime_threshold_mg_l: number;
-  daily_caffeine_estimate_mg: number;
-  medications: string[];
-  conditions: string[];
+  smoking_status?: boolean;
+  oral_contraceptive?: boolean;
+  genotype?: Genotype;
+  medications?: string[];
+  pregnancy?: boolean;
+  liver_disease?: boolean;
+  cardiac_condition?: boolean;
+  seizure_disorder?: boolean;
+  habitual_caffeine_mg_per_day?: number;
+  wake_time?: string;
+  bed_time?: string;
+}
+
+/** PUT /user/profile — response */
+export interface UserProfileResponse {
+  status: string;
 }
 
 // ── Dose Request / Response ───────────────────────────────────
 
+/** POST /dose/request — request body (matches DoseRequest) */
 export interface DoseRequestPayload {
   user_id: string;
-  timestamp: string;
+  target_mg_l?: number;
+  bed_time?: string | null;
 }
 
+/** POST /dose/request — response (matches DoseResponse) */
 export interface DoseResponse {
-  approved: boolean;
-  dose_id: string;
   amount_mg: number;
   reason: string;
-  predicted_peak_mg_l: number;
-  predicted_bedtime_mg_l: number;
+  denied: boolean;
 }
 
 // ── Dose Confirm ──────────────────────────────────────────────
 
+/** POST /dose/confirm — request body (matches ConfirmRequest) */
 export interface DoseConfirmPayload {
-  dose_id: string;
-  actual_amount_mg: number;
-  timestamp: string;
-  source: "device" | "manual";
+  dose_id: number;
 }
 
+/** POST /dose/confirm — response */
 export interface DoseConfirmResponse {
-  confirmed: boolean;
-  daily_total_mg: number;
+  status: string;
 }
 
 // ── Dose Skip ─────────────────────────────────────────────────
 
+/** POST /dose/skip — request body (matches SkipRequest) */
 export interface DoseSkipPayload {
+  dose_id: number;
+}
+
+/** POST /dose/skip — response */
+export interface DoseSkipResponse {
+  status: string;
   dose_id: string;
-  timestamp: string;
 }
 
 // ── Schedule ──────────────────────────────────────────────────
 
+/** POST /schedule/generate — request body (matches ScheduleRequest) */
 export interface ScheduleRequestPayload {
   user_id: string;
-  date: string;
+  target_mg_l?: number;
+  dose_mg?: number;
+  interval_min?: number;
 }
 
-export type ScheduledDoseStatus = "upcoming" | "taken" | "skipped";
-
+/** A single dose in the schedule response (matches ScheduleDoseItem) */
 export interface ScheduledDose {
-  dose_id: string;
-  time: string;
   amount_mg: number;
-  status: ScheduledDoseStatus;
+  time: string;
+  formulation: string;
 }
 
+/** POST /schedule/generate — response (matches ScheduleResponse) */
 export interface ScheduleResponse {
-  date: string;
   doses: ScheduledDose[];
-  total_mg: number;
-  cutoff_time: string;
+  daily_total_mg: number;
+  target_mg_l: number;
 }
 
 // ── Curve ─────────────────────────────────────────────────────
 
+/** A single point on the curve (matches CurvePoint) */
 export interface CurvePoint {
   time: string;
-  hour: number;
-  concentration_mg_l: number;
-  upper_bound: number;
+  point_estimate: number;
   lower_bound: number;
+  upper_bound: number;
 }
 
+/** GET /user/curve — response (matches CurveResponse) */
 export interface CurveResponse {
-  user_id: string;
-  date: string;
   points: CurvePoint[];
-  target_level: number;
-  bedtime_threshold: number;
 }
 
 // ── Feedback ──────────────────────────────────────────────────
 
+/** POST /feedback/alertness — request body (matches AlertnessRequest) */
 export interface AlertnessFeedback {
   user_id: string;
   rating: 1 | 2 | 3 | 4 | 5;
-  timestamp: string;
 }
 
+/** POST /feedback/side-effect — request body (matches SideEffectRequest) */
 export type SideEffectType =
   | "jitters"
   | "anxiety"
@@ -121,24 +132,31 @@ export type SideEffectType =
 
 export interface SideEffectFeedback {
   user_id: string;
-  type: SideEffectType;
-  timestamp: string;
+  side_effect: SideEffectType;
   notes?: string;
 }
 
+/** POST /feedback/sleep — request body (matches SleepRequest) */
 export interface SleepFeedback {
   user_id: string;
-  rating: 1 | 2 | 3 | 4 | 5;
-  caffeine_affected: boolean | null;
-  timestamp: string;
+  date: string;
+  bed_time: string;
+  wake_time: string;
+  quality_rating?: number | null;
+  total_sleep_min?: number | null;
+  source?: string;
+}
+
+/** Generic feedback response (all feedback endpoints return this) */
+export interface FeedbackResponse {
+  status: string;
 }
 
 // ── Device Status ─────────────────────────────────────────────
 
+/** GET /device/status — response (matches DeviceStatusResponse) */
 export interface DeviceStatusResponse {
-  connected: boolean;
-  cartridge_percent: number;
-  pump_status: "ready" | "dispensing" | "error" | "empty";
-  firmware_version: string;
-  battery_percent: number;
+  status: string;
+  cartridge_level_mg: number;
+  max_single_dose_mg: number;
 }

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { View } from "react-native";
+import { type DimensionValue, View } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -9,13 +9,13 @@ import Animated, {
 } from "react-native-reanimated";
 
 interface SkeletonLoaderProps {
-  width: number;
+  width?: DimensionValue;
   height: number;
   borderRadius?: number;
 }
 
 export function SkeletonLoader({
-  width,
+  width = "100%",
   height,
   borderRadius = 8,
 }: SkeletonLoaderProps) {
