@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { useSessionStore } from "@/lib/store/useSessionStore";
 import { useUserStore } from "@/lib/store/useUserStore";
 import { useUpdateProfile } from "@/lib/api/useUserProfile";
+import { useDoseStore } from "@/lib/store/useDoseStore";
 import type { UserProfilePayload } from "@/lib/api/types";
 
 /** Generate a simple unique user ID */
@@ -19,6 +20,7 @@ export default function DeviceSetupScreen() {
   const user = useUserStore();
   const setProfile = user.setProfile;
   const updateProfile = useUpdateProfile();
+  const clearDoses = useDoseStore((s) => s.clearAll);
 
   /** Create user profile on the server and complete onboarding */
   const finishOnboarding = useCallback(() => {
@@ -50,9 +52,10 @@ export default function DeviceSetupScreen() {
     // Fire and forget — onboarding succeeds even if server is offline
     updateProfile.mutate(payload);
 
+    clearDoses();
     completeOnboarding();
     router.replace("/(tabs)");
-  }, [user, setProfile, updateProfile, completeOnboarding]);
+  }, [user, setProfile, updateProfile, completeOnboarding, clearDoses]);
 
   const handleSkip = () => {
     finishOnboarding();

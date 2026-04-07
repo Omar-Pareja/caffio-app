@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from "react";
-import { View, ScrollView, Text } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { View, ScrollView, Text, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Card } from "@/components/ui/Card";
@@ -9,16 +9,19 @@ import { DoseButton } from "@/components/dosing/DoseButton";
 import { DailyStats } from "@/components/dosing/DailyStats";
 import { DoseLog } from "@/components/dosing/DoseLog";
 import { CutoffBanner } from "@/components/dosing/CutoffBanner";
+import { LogDrinkSheet } from "@/components/dosing/LogDrinkSheet";
 import { DeviceStatus } from "@/components/device/DeviceStatus";
 import { useUserStore } from "@/lib/store/useUserStore";
 import { useDoseStore } from "@/lib/store/useDoseStore";
 import { useBleStore } from "@/lib/store/useBleStore";
 import { useSessionStore } from "@/lib/store/useSessionStore";
 import { useDoseRequest } from "@/lib/api/useDoseRequest";
+import { useDoseLog } from "@/lib/api/useDoseLog";
 import { useCurve } from "@/lib/api/useCurve";
 import { derivePKParameters, DEFAULT_PK } from "@/lib/pk/parameters";
 import { generateCurve, predictAtTime } from "@/lib/pk/curve";
 import type { DoseEvent } from "@/lib/pk/bateman";
+import type { DrinkFormulation } from "@/lib/store/useDoseStore";
 import type { CurvePoint as LocalCurvePoint } from "@/lib/pk/curve";
 
 /** Convert store doses to PK DoseEvent format */
@@ -60,9 +63,20 @@ function currentFractionalHour(): number {
 function serverCurveToLocal(
   points: { time: string; point_estimate: number; lower_bound: number; upper_bound: number }[],
 ): LocalCurvePoint[] {
+  if (points.length === 0) return [];
+
+  const firstDate = new Date(points[0].time);
+  const baseDay = firstDate.getDate();
+
   return points.map((p) => {
     const date = new Date(p.time);
-    const hour = date.getHours() + date.getMinutes() / 60;
+    let hour = date.getHours() + date.getMinutes() / 60;
+
+    // If the point is on the next calendar day, add 24 to keep x-axis monotonic
+    if (date.getDate() !== baseDay) {
+      hour += 24;
+    }
+
     return {
       hour: Math.round(hour * 100) / 100,
       level: p.point_estimate,
@@ -81,7 +95,11 @@ export default function HomeScreen() {
 
   // API hooks
   const doseRequest = useDoseRequest();
+  const doseLog = useDoseLog();
   const curveQuery = useCurve(user.userId);
+
+  // Log Drink sheet state
+  const [logDrinkVisible, setLogDrinkVisible] = useState(false);
 
   // Derive PK params from user profile (or use defaults)
   const pk = useMemo(() => {
@@ -118,20 +136,23 @@ export default function HomeScreen() {
     return localCurveData;
   }, [curveQuery.data, localCurveData]);
 
-  // Dose markers on the curve
+  // Dose markers on the curve — tag external drinks for blue dots
   const doseMarkers = useMemo(
     () =>
-      doseEvents.map((de) => {
+      doseStore.doses.map((d) => {
+        const date = new Date(d.timestamp);
+        const hr = date.getHours() + date.getMinutes() / 60;
         const point = curveData.find(
-          (p) => Math.abs(p.hour - de.timeHr) < 0.15,
+          (p) => Math.abs(p.hour - hr) < 0.15,
         );
         return {
-          hour: de.timeHr,
-          mg: de.amountMg,
+          hour: hr,
+          mg: d.amountMg,
           level: point?.level ?? 0,
+          isExternal: d.formulation !== undefined && d.formulation !== "caffio",
         };
       }),
-    [doseEvents, curveData],
+    [doseStore.doses, curveData],
   );
 
   // Current level + trend (use local PK for real-time interpolation)
@@ -146,6 +167,34 @@ export default function HomeScreen() {
 
   // Cutoff time display
   const cutoffDisplay = doseStore.cutoffTime ?? "---";
+
+  // Handle logging an external drink
+  const handleLogDrink = useCallback(
+    (amountMg: number, formulation: Exclude<DrinkFormulation, "caffio">) => {
+      const doseId = `drink-${Date.now()}`;
+      const timestamp = new Date().toISOString();
+
+      // Record locally for instant UI update
+      doseStore.addDose({
+        doseId,
+        amountMg,
+        timestamp,
+        source: "manual",
+        confirmed: true,
+        formulation,
+      });
+
+      // Log to server if user has an account
+      if (user.userId) {
+        doseLog.mutate({
+          user_id: user.userId,
+          amount_mg: amountMg,
+          formulation,
+        });
+      }
+    },
+    [doseStore, doseLog, user.userId],
+  );
 
   // Handle dose press — calls server, falls back to local
   const handleDose = useCallback(() => {
@@ -286,6 +335,21 @@ export default function HomeScreen() {
           loading={doseRequest.isPending}
         />
 
+        {/* Log Drink button — secondary, outlined */}
+        <View className="items-center mt-2 mb-1">
+          <Pressable
+            className="rounded-xl border border-border px-6 py-2.5 active:opacity-70"
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setLogDrinkVisible(true);
+            }}
+          >
+            <Text className="text-text-secondary font-dm-sans text-sm">
+              Log a Drink
+            </Text>
+          </Pressable>
+        </View>
+
         {/* Daily stats */}
         <DailyStats
           dailyTotal={doseStore.dailyTotalMg}
@@ -304,6 +368,13 @@ export default function HomeScreen() {
           />
         </View>
       </ScrollView>
+
+      {/* Log Drink bottom sheet */}
+      <LogDrinkSheet
+        visible={logDrinkVisible}
+        onClose={() => setLogDrinkVisible(false)}
+        onSelect={handleLogDrink}
+      />
     </SafeAreaView>
   );
 }

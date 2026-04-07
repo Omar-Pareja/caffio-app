@@ -49,6 +49,21 @@ export interface DoseResponse {
   denied: boolean;
 }
 
+// ── Dose Log (external drinks) ───────────────────────────────
+
+/** POST /dose/log — request body */
+export interface DoseLogPayload {
+  user_id: string;
+  amount_mg: number;
+  formulation: "coffee" | "tea" | "energy_drink";
+}
+
+/** POST /dose/log — response */
+export interface DoseLogResponse {
+  status: string;
+  dose_id: string;
+}
+
 // ── Dose Confirm ──────────────────────────────────────────────
 
 /** POST /dose/confirm — request body (matches ConfirmRequest) */

@@ -35,6 +35,8 @@ interface DoseMarker {
   hour: number;
   mg: number;
   level: number;
+  /** True if this is an externally logged drink (shown as blue dot) */
+  isExternal?: boolean;
 }
 
 interface CaffeineChartProps {
@@ -76,7 +78,9 @@ export function CaffeineChart({
           lineColor: colors.border,
           labelColor: colors.text.muted,
           formatXLabel: (v) => {
-            const h = Math.round(Number(v));
+            const raw = Math.round(Number(v));
+            const h = raw >= 24 ? raw - 24 : raw;
+            if (h === 0) return "12a";
             if (h < 12) return `${h}a`;
             if (h === 12) return "12p";
             return `${h - 12}p`;
@@ -117,7 +121,7 @@ export function CaffeineChart({
                 points={points.upper}
                 y0={yScale(0)}
                 color={colors.chart.confidenceBand}
-                curveType="natural"
+                curveType="monotoneX"
               />
 
               {/* Main caffeine concentration line */}
@@ -125,7 +129,7 @@ export function CaffeineChart({
                 points={points.level}
                 color={colors.accent.primary}
                 strokeWidth={2.5}
-                curveType="natural"
+                curveType="monotoneX"
               />
 
               {/* Current time "Now" indicator */}
@@ -146,7 +150,7 @@ export function CaffeineChart({
                 />
               )}
 
-              {/* Dose markers */}
+              {/* Dose markers — red for Caffio, blue for external drinks */}
               {doseMarkers.map((dose, i) => {
                 const cx = xScale(dose.hour);
                 const cy = yScale(dose.level);
@@ -156,7 +160,7 @@ export function CaffeineChart({
                     cx={cx}
                     cy={cy}
                     r={4}
-                    color={colors.accent.danger}
+                    color={dose.isExternal ? colors.drink : colors.accent.danger}
                   />
                 );
               })}

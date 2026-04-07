@@ -7,12 +7,16 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { asyncStorage } from "@/lib/storage";
 
+export type DrinkFormulation = "caffio" | "coffee" | "tea" | "energy_drink";
+
 export interface DoseRecord {
   doseId: string;
   amountMg: number;
   timestamp: string;
   source: "device" | "manual";
   confirmed: boolean;
+  /** Drink type — "caffio" for device doses, others for logged external drinks */
+  formulation?: DrinkFormulation;
 }
 
 interface DoseState {
@@ -34,6 +38,8 @@ interface DoseActions {
   queueForSync: (dose: DoseRecord) => void;
   clearSynced: (doseIds: string[]) => void;
   resetIfNewDay: () => void;
+  /** Clear all doses — used when a new profile is created during onboarding */
+  clearAll: () => void;
 }
 
 function todayStr(): string {
@@ -88,6 +94,8 @@ export const useDoseStore = create<DoseState & DoseActions>()(
           set({ ...initialState, date: today });
         }
       },
+
+      clearAll: () => set({ ...initialState, date: todayStr() }),
     }),
     {
       name: "dose-store",

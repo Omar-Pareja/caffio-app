@@ -23,6 +23,8 @@ export const colors = {
     danger: "#FF6B6B",
     success: "#7ED321",
   },
+  /** Blue accent for externally logged drinks on the chart */
+  drink: "#5B9BF5",
   chart: {
     confidenceBand: "rgba(78, 205, 196, 0.18)",
     targetZone: "rgba(126, 211, 33, 0.08)",

@@ -1,6 +1,20 @@
 import { View, Text, Pressable } from "react-native";
 import { Card } from "@/components/ui/Card";
-import type { DoseRecord } from "@/lib/store/useDoseStore";
+import type { DoseRecord, DrinkFormulation } from "@/lib/store/useDoseStore";
+
+const FORMULATION_LABELS: Record<DrinkFormulation, string> = {
+  caffio: "dispensed",
+  coffee: "coffee",
+  tea: "tea",
+  energy_drink: "energy drink",
+};
+
+function formatSource(dose: DoseRecord): string {
+  if (dose.formulation && dose.formulation !== "caffio") {
+    return FORMULATION_LABELS[dose.formulation];
+  }
+  return dose.source === "device" ? "dispensed" : "manual";
+}
 
 interface DoseLogProps {
   doses: DoseRecord[];
@@ -43,7 +57,11 @@ export function DoseLog({ doses, expanded, onToggle }: DoseLogProps) {
           <View className="flex-row items-center gap-3">
             <View
               className={`h-2 w-2 rounded-full ${
-                dose.confirmed ? "bg-accent-danger" : "bg-accent-warning"
+                dose.formulation && dose.formulation !== "caffio"
+                  ? "bg-[#5B9BF5]"
+                  : dose.confirmed
+                    ? "bg-accent-danger"
+                    : "bg-accent-warning"
               }`}
             />
             <Text className="text-text-primary font-inter text-sm">
@@ -55,7 +73,7 @@ export function DoseLog({ doses, expanded, onToggle }: DoseLogProps) {
               {dose.amountMg} mg
             </Text>
             <Text className="text-text-muted font-inter text-xs">
-              {dose.source === "device" ? "dispensed" : "manual"}
+              {formatSource(dose)}
             </Text>
           </View>
         </View>
